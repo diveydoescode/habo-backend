@@ -8,12 +8,12 @@ from app.services.task_service import (
 )
 from app.services.auth_service import get_current_user
 from app.models.user import User
+from uuid import UUID
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 JAIPUR_LAT = 26.9124
 JAIPUR_LON = 75.7873
-
 
 @router.post("", response_model=TaskResponse, status_code=201)
 def post_task(
@@ -22,7 +22,6 @@ def post_task(
     current_user: User = Depends(get_current_user),
 ):
     return create_task(db, payload, current_user)
-
 
 @router.get("", response_model=list[TaskResponse])
 def list_tasks(
@@ -34,14 +33,13 @@ def list_tasks(
 ):
     return get_tasks_in_radius(db, lat, lon, category)
 
-
 @router.post("/{task_id}/accept", response_model=TaskAcceptResponse)
 def accept(
-    task_id: str,
+    task_id: UUID, # ✅ Changed to UUID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    task = accept_task(db, task_id, current_user)
+    task = accept_task(db, str(task_id), current_user)
     return TaskAcceptResponse(
         task_id=task.id,
         accepted_by=current_user.name,
@@ -49,12 +47,11 @@ def accept(
         chat_unlocked=True,
     )
 
-
 @router.post("/{task_id}/complete", response_model=TaskResponse)
 def complete(
-    task_id: str,
+    task_id: UUID, # ✅ Changed to UUID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    task = complete_task(db, task_id, current_user)
+    task = complete_task(db, str(task_id), current_user)
     return _task_to_response(task)
