@@ -20,6 +20,7 @@ def search_users(db: Session, query: str, current_user_id: str, limit: int = 20)
 
     output = []
     for user, sim in results:
+        # This one is a direct table query, so .count() works perfectly here
         follower_count = db.query(followers_table).filter(
             followers_table.c.following_id == user.id
         ).count()
@@ -44,7 +45,8 @@ def follow_user(db: Session, current_user: User, target_id: str) -> dict:
         raise HTTPException(status_code=400, detail="Already following")
     current_user.following.append(target)
     db.commit()
-    return {"following": True, "follower_count": target.followers.count()}
+    # Changed .count() to len()
+    return {"following": True, "follower_count": len(target.followers)}
 
 
 def unfollow_user(db: Session, current_user: User, target_id: str) -> dict:
@@ -56,7 +58,8 @@ def unfollow_user(db: Session, current_user: User, target_id: str) -> dict:
         raise HTTPException(status_code=400, detail="Not following this user")
     current_user.following.remove(target)
     db.commit()
-    return {"following": False, "follower_count": target.followers.count()}
+    # Changed .count() to len()
+    return {"following": False, "follower_count": len(target.followers)}
 
 
 def get_user_profile(db: Session, user_id: str, current_user_id: str) -> dict:
@@ -74,7 +77,7 @@ def get_user_profile(db: Session, user_id: str, current_user_id: str) -> dict:
         "tasks_completed": user.tasks_completed,
         "member_since": user.member_since,
         "public_key": user.public_key,
-        "follower_count": user.followers.count(),
-        "following_count": user.following.count(),
+        "follower_count": len(user.followers), # <--- CHANGED HERE
+        "following_count": user.following.count(), # This stays as .count() because of lazy="dynamic"
         "is_following": current.following.filter(User.id == user_id).first() is not None,
     }
