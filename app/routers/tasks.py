@@ -53,12 +53,13 @@ def accept(
         accepted_by=current_user.name,
         status=task.status,
         chat_unlocked=True,
+        completion_code=task.completion_code # ✅ Passes the newly generated code back
     )
 
 @router.post("/{task_id}/complete", response_model=TaskResponse)
 def complete(
     task_id: UUID, 
-    code: str = Query(..., min_length=6, max_length=6), # ✅ Requires the 6-digit code
+    code: str = Query(..., min_length=6, max_length=6), # ✅ Requires the 6-digit code from Swift
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

@@ -47,3 +47,4 @@ class TaskAcceptResponse(BaseModel):
     accepted_by: str
     status: str
     chat_unlocked: bool = True
+    completion_code: str # ✅ Added this so Swift gets it instantly upon accepting
