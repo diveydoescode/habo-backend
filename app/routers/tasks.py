@@ -1,10 +1,11 @@
+# MARK: - routers/tasks.py
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.task import TaskCreate, TaskResponse, TaskAcceptResponse
 from app.services.task_service import (
     create_task, get_tasks_in_radius, accept_task,
-    complete_task, _task_to_response, get_user_tasks # ✅ Imported the new function
+    complete_task, _task_to_response, get_user_tasks
 )
 from app.services.auth_service import get_current_user
 from app.models.user import User
@@ -33,8 +34,6 @@ def list_tasks(
 ):
     return get_tasks_in_radius(db, lat, lon, category)
 
-# ✅ NEW ROUTE: Fetch personal tasks so they show up in Chats and Profile!
-# Note: This MUST be above the /{task_id} routes so FastAPI doesn't confuse "me" with a UUID.
 @router.get("/me", response_model=list[TaskResponse])
 def my_tasks(
     db: Session = Depends(get_db),
@@ -59,8 +58,10 @@ def accept(
 @router.post("/{task_id}/complete", response_model=TaskResponse)
 def complete(
     task_id: UUID, 
+    code: str = Query(..., min_length=6, max_length=6), # ✅ Requires the 6-digit code
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    task = complete_task(db, str(task_id), current_user)
+    # Passes the code to the service layer for strict validation
+    task = complete_task(db, str(task_id), current_user, code)
     return _task_to_response(task)

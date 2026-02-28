@@ -1,10 +1,12 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import text, or_ # ✅ Added or_ here
+from sqlalchemy import text, or_
 from geoalchemy2.shape import to_shape
 from app.models.task import GigTask
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskResponse
 from fastapi import HTTPException
+import random
+import string
 
 def _task_to_response(task: GigTask) -> TaskResponse:
     point = to_shape(task.location)
@@ -19,6 +21,7 @@ def _task_to_response(task: GigTask) -> TaskResponse:
         longitude=point.x,
         radius_metres=task.radius_metres,
         status=task.status,
+        completion_code=task.completion_code, # ✅ Expose the code to the frontend
         created_at=task.created_at,
         creator_name=task.creator.name,
         creator_id=task.creator_id,
@@ -73,7 +76,6 @@ def get_tasks_in_radius(
 
     return [_task_to_response(t) for t in tasks]
 
-# ✅ NEW FUNCTION: Gets all tasks you posted OR accepted
 def get_user_tasks(db: Session, user: User) -> list[TaskResponse]:
     tasks = db.query(GigTask).filter(
         or_(
@@ -92,18 +94,28 @@ def accept_task(db: Session, task_id: str, acceptor: User) -> GigTask:
         raise HTTPException(status_code=400, detail="Task is no longer available")
     if str(task.creator_id) == str(acceptor.id):
         raise HTTPException(status_code=400, detail="Cannot accept your own task")
+    
     task.status = "Accepted"
     task.accepted_by_id = acceptor.id
+    # ✅ Generate a random 6-digit verification code
+    task.completion_code = ''.join(random.choices(string.digits, k=6))
+    
     db.commit()
     db.refresh(task)
     return task
 
-def complete_task(db: Session, task_id: str, requester: User) -> GigTask:
+# ✅ Updated to require the completion_code
+def complete_task(db: Session, task_id: str, requester: User, completion_code: str) -> GigTask:
     task = db.query(GigTask).filter(GigTask.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     if str(task.creator_id) != str(requester.id):
         raise HTTPException(status_code=403, detail="Only the task creator can mark it complete")
+    
+    # ✅ Strict Verification
+    if task.completion_code != completion_code:
+        raise HTTPException(status_code=400, detail="Invalid 6-digit verification code")
+        
     task.status = "Completed"
     db.commit()
     return task
