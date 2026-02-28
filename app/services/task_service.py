@@ -1,3 +1,4 @@
+# MARK: - services/task_service.py
 from sqlalchemy.orm import Session
 from sqlalchemy import text, or_
 from geoalchemy2.shape import to_shape
@@ -21,7 +22,7 @@ def _task_to_response(task: GigTask) -> TaskResponse:
         longitude=point.x,
         radius_metres=task.radius_metres,
         status=task.status,
-        completion_code=task.completion_code, # ✅ Expose the code to the frontend
+        completion_code=task.completion_code, 
         created_at=task.created_at,
         creator_name=task.creator.name,
         creator_id=task.creator_id,
@@ -97,14 +98,12 @@ def accept_task(db: Session, task_id: str, acceptor: User) -> GigTask:
     
     task.status = "Accepted"
     task.accepted_by_id = acceptor.id
-    # ✅ Generate a random 6-digit verification code
     task.completion_code = ''.join(random.choices(string.digits, k=6))
     
     db.commit()
     db.refresh(task)
     return task
 
-# ✅ Updated to require the completion_code
 def complete_task(db: Session, task_id: str, requester: User, completion_code: str) -> GigTask:
     task = db.query(GigTask).filter(GigTask.id == task_id).first()
     if not task:
@@ -112,10 +111,26 @@ def complete_task(db: Session, task_id: str, requester: User, completion_code: s
     if str(task.creator_id) != str(requester.id):
         raise HTTPException(status_code=403, detail="Only the task creator can mark it complete")
     
-    # ✅ Strict Verification
     if task.completion_code != completion_code:
         raise HTTPException(status_code=400, detail="Invalid 6-digit verification code")
         
     task.status = "Completed"
     db.commit()
     return task
+
+# ✅ NEW: Delete task logic
+def delete_task(db: Session, task_id: str, user: User):
+    task = db.query(GigTask).filter(GigTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    if str(task.creator_id) != str(user.id):
+        raise HTTPException(status_code=403, detail="Only the task creator can delete this task")
+    
+    # Adjust profile stats
+    if user.tasks_posted > 0:
+        user.tasks_posted -= 1
+        
+    db.delete(task)
+    db.commit()
+    return {"detail": "Task deleted successfully"}
