@@ -1,3 +1,4 @@
+# MARK: - models/task.py
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -5,7 +6,6 @@ from geoalchemy2 import Geometry
 from datetime import datetime, timezone
 import uuid
 from app.database import Base
-
 
 class GigTask(Base):
     __tablename__ = "tasks"
@@ -19,6 +19,10 @@ class GigTask(Base):
     location = Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
     radius_metres = Column(Integer, default=10000)
     status = Column(String, default="Active")
+    
+    # ✅ Added the 6-digit completion code column
+    completion_code = Column(String(6), nullable=True) 
+    
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     creator_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     accepted_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)

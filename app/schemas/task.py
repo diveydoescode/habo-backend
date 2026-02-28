@@ -1,7 +1,7 @@
+# MARK: - schemas/task.py
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime
 from uuid import UUID
-
 
 class TaskCreate(BaseModel):
     title: str
@@ -20,7 +20,6 @@ class TaskCreate(BaseModel):
             raise ValueError("Budget must be greater than 0")
         return v
 
-
 class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -34,11 +33,14 @@ class TaskResponse(BaseModel):
     longitude: float
     radius_metres: int
     status: str
+    
+    # ✅ Exposing the code to the frontend
+    completion_code: str | None = None 
+    
     created_at: datetime
     creator_name: str
     creator_id: UUID
     accepted_by_id: UUID | None = None
-
 
 class TaskAcceptResponse(BaseModel):
     task_id: UUID
