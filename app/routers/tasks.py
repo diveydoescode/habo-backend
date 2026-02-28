@@ -4,7 +4,7 @@ from app.database import get_db
 from app.schemas.task import TaskCreate, TaskResponse, TaskAcceptResponse
 from app.services.task_service import (
     create_task, get_tasks_in_radius, accept_task,
-    complete_task, _task_to_response,
+    complete_task, _task_to_response, get_user_tasks # ✅ Imported the new function
 )
 from app.services.auth_service import get_current_user
 from app.models.user import User
@@ -33,9 +33,18 @@ def list_tasks(
 ):
     return get_tasks_in_radius(db, lat, lon, category)
 
+# ✅ NEW ROUTE: Fetch personal tasks so they show up in Chats and Profile!
+# Note: This MUST be above the /{task_id} routes so FastAPI doesn't confuse "me" with a UUID.
+@router.get("/me", response_model=list[TaskResponse])
+def my_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return get_user_tasks(db, current_user)
+
 @router.post("/{task_id}/accept", response_model=TaskAcceptResponse)
 def accept(
-    task_id: UUID, # ✅ Changed to UUID
+    task_id: UUID, 
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -49,7 +58,7 @@ def accept(
 
 @router.post("/{task_id}/complete", response_model=TaskResponse)
 def complete(
-    task_id: UUID, # ✅ Changed to UUID
+    task_id: UUID, 
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

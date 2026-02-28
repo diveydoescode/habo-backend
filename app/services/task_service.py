@@ -1,11 +1,10 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, or_ # ✅ Added or_ here
 from geoalchemy2.shape import to_shape
 from app.models.task import GigTask
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskResponse
 from fastapi import HTTPException
-
 
 def _task_to_response(task: GigTask) -> TaskResponse:
     point = to_shape(task.location)
@@ -26,7 +25,6 @@ def _task_to_response(task: GigTask) -> TaskResponse:
         accepted_by_id=task.accepted_by_id,
     )
 
-
 def create_task(db: Session, payload: TaskCreate, creator: User) -> TaskResponse:
     point_wkt = f"SRID=4326;POINT({payload.longitude} {payload.latitude})"
     task = GigTask(
@@ -45,20 +43,15 @@ def create_task(db: Session, payload: TaskCreate, creator: User) -> TaskResponse
     db.refresh(task)
     return _task_to_response(task)
 
-
 def get_tasks_in_radius(
     db: Session,
     viewer_lat: float,
     viewer_lon: float,
     category: str | None = None,
 ) -> list[TaskResponse]:
-    """
-    Uses raw SQL for the geospatial query to avoid SQLAlchemy
-    casting issues with PostGIS functions.
-    """
     sql = text("""
-        SELECT id FROM tasks
-        WHERE status = 'Active'
+        SELECT id FROM tasks 
+        WHERE status = 'Active' 
         AND ST_DWithin(
             location::geography,
             ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography,
@@ -80,6 +73,16 @@ def get_tasks_in_radius(
 
     return [_task_to_response(t) for t in tasks]
 
+# ✅ NEW FUNCTION: Gets all tasks you posted OR accepted
+def get_user_tasks(db: Session, user: User) -> list[TaskResponse]:
+    tasks = db.query(GigTask).filter(
+        or_(
+            GigTask.creator_id == user.id,
+            GigTask.accepted_by_id == user.id
+        )
+    ).order_by(GigTask.created_at.desc()).all()
+    
+    return [_task_to_response(t) for t in tasks]
 
 def accept_task(db: Session, task_id: str, acceptor: User) -> GigTask:
     task = db.query(GigTask).filter(GigTask.id == task_id).first()
@@ -94,7 +97,6 @@ def accept_task(db: Session, task_id: str, acceptor: User) -> GigTask:
     db.commit()
     db.refresh(task)
     return task
-
 
 def complete_task(db: Session, task_id: str, requester: User) -> GigTask:
     task = db.query(GigTask).filter(GigTask.id == task_id).first()
