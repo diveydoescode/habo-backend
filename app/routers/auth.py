@@ -48,6 +48,7 @@ async def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db
             public_key=user.public_key,
             follower_count=get_follower_count(db, user.id),
             following_count=get_following_count(db, user.id),
+            skills=user.skills, # ✅ Added skills
         ),
     )
 
@@ -69,4 +70,5 @@ def get_me(
         public_key=current_user.public_key,
         follower_count=get_follower_count(db, current_user.id),
         following_count=get_following_count(db, current_user.id),
+        skills=current_user.skills, # ✅ Added skills
     )

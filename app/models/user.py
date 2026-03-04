@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, Table
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB  # ✅ Added JSONB import
 from datetime import datetime, timezone
 import uuid
 from app.database import Base
@@ -11,7 +11,6 @@ followers_table = Table(
     Column("follower_id", UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True),
     Column("following_id", UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True),
 )
-
 
 class User(Base):
     __tablename__ = "users"
@@ -25,6 +24,7 @@ class User(Base):
     tasks_posted = Column(Integer, default=0)
     tasks_completed = Column(Integer, default=0)
     member_since = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    skills = Column(JSONB, default=list)  # ✅ Added skills column
 
     tasks = relationship("GigTask", back_populates="creator", foreign_keys="GigTask.creator_id")
     accepted_tasks = relationship("GigTask", back_populates="acceptor", foreign_keys="GigTask.accepted_by_id")
