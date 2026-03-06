@@ -1,7 +1,8 @@
+# MARK: - main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
-from app.routers import auth, tasks, users, chat, payments
+from app.routers import auth, tasks, users, chat, payments, circles # ✅ Added circles here
 
 settings = get_settings()
 
@@ -24,6 +25,7 @@ app.include_router(tasks.router)
 app.include_router(users.router)
 app.include_router(chat.router)
 app.include_router(payments.router)
+app.include_router(circles.router) # ✅ Registered the new circles router
 
 
 @app.get("/health", tags=["Health"])

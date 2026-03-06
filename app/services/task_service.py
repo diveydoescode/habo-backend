@@ -2,9 +2,10 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import text, or_
 from geoalchemy2.shape import to_shape
-from app.models.task import GigTask
+from app.models.task import GigTask, TaskApplication
 from app.models.user import User
-from app.schemas.task import TaskCreate, TaskResponse
+from app.models.circle import CircleMember
+from app.schemas.task import TaskCreate, TaskResponse, TaskApplicationCreate, TaskAcceptResponse
 from fastapi import HTTPException
 import random
 import string
@@ -23,6 +24,8 @@ def _task_to_response(task: GigTask) -> TaskResponse:
         radius_metres=task.radius_metres,
         status=task.status,
         completion_code=task.completion_code, 
+        circle_id=task.circle_id, # ✅ Added
+        requires_application=task.requires_application, # ✅ Added
         created_at=task.created_at,
         creator_name=task.creator.name,
         creator_id=task.creator_id,
@@ -30,6 +33,15 @@ def _task_to_response(task: GigTask) -> TaskResponse:
     )
 
 def create_task(db: Session, payload: TaskCreate, creator: User) -> TaskResponse:
+    # ✅ Prevent posting to a circle the user isn't in
+    if payload.circle_id:
+        member = db.query(CircleMember).filter(
+            CircleMember.circle_id == payload.circle_id,
+            CircleMember.user_id == creator.id
+        ).first()
+        if not member:
+            raise HTTPException(status_code=403, detail="You can only post tasks to circles you are a member of.")
+
     point_wkt = f"SRID=4326;POINT({payload.longitude} {payload.latitude})"
     task = GigTask(
         title=payload.title,
@@ -39,6 +51,8 @@ def create_task(db: Session, payload: TaskCreate, creator: User) -> TaskResponse
         is_negotiable=payload.is_negotiable,
         location=point_wkt,
         radius_metres=payload.radius_metres,
+        circle_id=payload.circle_id, # ✅ Added
+        requires_application=payload.requires_application, # ✅ Added
         creator_id=creator.id,
     )
     db.add(task)
@@ -51,14 +65,15 @@ def get_tasks_in_radius(
     db: Session,
     viewer_lat: float,
     viewer_lon: float,
-    category: str | None = None,
+    category: str | None,
+    current_user: User, # ✅ Added current_user to filter private circles
 ) -> list[TaskResponse]:
     sql = text("""
         SELECT id FROM tasks 
         WHERE status = 'Active' 
         AND ST_DWithin(
             location::geography,
-            ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(:lon, :lat), 4326):geography,
             radius_metres
         )
         ORDER BY created_at DESC
@@ -70,11 +85,26 @@ def get_tasks_in_radius(
     if not task_ids:
         return []
 
-    tasks = db.query(GigTask).filter(GigTask.id.in_(task_ids)).all()
+    # ✅ Fetch the user's circle IDs
+    user_circle_ids = [
+        c.circle_id for c in db.query(CircleMember.circle_id).filter(
+            CircleMember.user_id == current_user.id
+        ).all()
+    ]
+
+    # ✅ Filter tasks: Must be public OR belong to a circle the user is in
+    tasks_query = db.query(GigTask).filter(
+        GigTask.id.in_(task_ids),
+        or_(
+            GigTask.circle_id.is_(None),
+            GigTask.circle_id.in_(user_circle_ids)
+        )
+    )
 
     if category:
-        tasks = [t for t in tasks if t.category == category]
+        tasks_query = tasks_query.filter(GigTask.category == category)
 
+    tasks = tasks_query.all()
     return [_task_to_response(t) for t in tasks]
 
 def get_user_tasks(db: Session, user: User) -> list[TaskResponse]:
@@ -95,6 +125,19 @@ def accept_task(db: Session, task_id: str, acceptor: User) -> GigTask:
         raise HTTPException(status_code=400, detail="Task is no longer available")
     if str(task.creator_id) == str(acceptor.id):
         raise HTTPException(status_code=400, detail="Cannot accept your own task")
+    
+    # ✅ Block instant accept if application is required
+    if task.requires_application:
+        raise HTTPException(status_code=400, detail="This task requires you to apply.")
+        
+    # ✅ Block if task is in a private circle the user isn't in
+    if task.circle_id:
+        member = db.query(CircleMember).filter(
+            CircleMember.circle_id == task.circle_id, 
+            CircleMember.user_id == acceptor.id
+        ).first()
+        if not member:
+            raise HTTPException(status_code=403, detail="You are not in this circle.")
     
     task.status = "Accepted"
     task.accepted_by_id = acceptor.id
@@ -118,7 +161,6 @@ def complete_task(db: Session, task_id: str, requester: User, completion_code: s
     db.commit()
     return task
 
-# ✅ NEW: Delete task logic
 def delete_task(db: Session, task_id: str, user: User):
     task = db.query(GigTask).filter(GigTask.id == task_id).first()
     if not task:
@@ -127,10 +169,93 @@ def delete_task(db: Session, task_id: str, user: User):
     if str(task.creator_id) != str(user.id):
         raise HTTPException(status_code=403, detail="Only the task creator can delete this task")
     
-    # Adjust profile stats
     if user.tasks_posted > 0:
         user.tasks_posted -= 1
         
     db.delete(task)
     db.commit()
     return {"detail": "Task deleted successfully"}
+
+# MARK: - NEW Application Logic
+
+def apply_for_task(db: Session, task_id: str, applicant: User, payload: TaskApplicationCreate):
+    task = db.query(GigTask).filter(GigTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not task.requires_application:
+        raise HTTPException(status_code=400, detail="This task allows instant acceptance. Just accept it!")
+    if task.status != "Active":
+        raise HTTPException(status_code=400, detail="Task is no longer available")
+    if str(task.creator_id) == str(applicant.id):
+        raise HTTPException(status_code=400, detail="Cannot apply for your own task")
+
+    if task.circle_id:
+        member = db.query(CircleMember).filter(
+            CircleMember.circle_id == task.circle_id, 
+            CircleMember.user_id == applicant.id
+        ).first()
+        if not member:
+            raise HTTPException(status_code=403, detail="You are not in this private circle.")
+
+    existing = db.query(TaskApplication).filter(
+        TaskApplication.task_id == task.id, 
+        TaskApplication.applicant_id == applicant.id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="You have already applied for this task.")
+
+    application = TaskApplication(
+        task_id=task.id,
+        applicant_id=applicant.id,
+        cover_message=payload.cover_message
+    )
+    db.add(application)
+    db.commit()
+    db.refresh(application)
+    return application
+
+def get_task_applications(db: Session, task_id: str, user: User):
+    task = db.query(GigTask).filter(GigTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if str(task.creator_id) != str(user.id):
+        raise HTTPException(status_code=403, detail="Only the task creator can view applications.")
+        
+    return db.query(TaskApplication).filter(TaskApplication.task_id == task_id).all()
+
+def accept_application(db: Session, application_id: str, user: User) -> TaskAcceptResponse:
+    application = db.query(TaskApplication).filter(TaskApplication.id == application_id).first()
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+        
+    task = application.task
+    if str(task.creator_id) != str(user.id):
+        raise HTTPException(status_code=403, detail="Only the creator can accept an application.")
+    if task.status != "Active":
+        raise HTTPException(status_code=400, detail="Task is already fulfilled or closed.")
+
+    # 1. Accept the chosen application
+    application.status = "accepted"
+    
+    # 2. Assign the task and generate the code
+    task.status = "Accepted"
+    task.accepted_by_id = application.applicant_id
+    task.completion_code = ''.join(random.choices(string.digits, k=6))
+
+    # 3. Reject all other pending applications for this task
+    other_apps = db.query(TaskApplication).filter(
+        TaskApplication.task_id == task.id,
+        TaskApplication.id != application_id
+    ).all()
+    for app in other_apps:
+        app.status = "rejected"
+
+    db.commit()
+    
+    return TaskAcceptResponse(
+        task_id=task.id,
+        accepted_by=application.applicant.name,
+        status=task.status,
+        chat_unlocked=True,
+        completion_code=task.completion_code
+    )

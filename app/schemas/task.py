@@ -12,6 +12,10 @@ class TaskCreate(BaseModel):
     latitude: float
     longitude: float
     radius_metres: int = 10000
+    
+    # ✅ NEW: Support for private circles and applications
+    circle_id: UUID | None = None
+    requires_application: bool = False
 
     @field_validator("budget")
     @classmethod
@@ -33,9 +37,11 @@ class TaskResponse(BaseModel):
     longitude: float
     radius_metres: int
     status: str
-    
-    # ✅ Exposing the code to the frontend
     completion_code: str | None = None 
+    
+    # ✅ NEW fields
+    circle_id: UUID | None = None
+    requires_application: bool = False
     
     created_at: datetime
     creator_name: str
@@ -47,4 +53,20 @@ class TaskAcceptResponse(BaseModel):
     accepted_by: str
     status: str
     chat_unlocked: bool = True
-    completion_code: str # ✅ Added this so Swift gets it instantly upon accepting
+    completion_code: str 
+
+
+# ✅ NEW: Application Schemas
+class TaskApplicationCreate(BaseModel):
+    cover_message: str | None = None
+
+class TaskApplicationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: UUID
+    task_id: UUID
+    applicant_id: UUID
+    status: str
+    cover_message: str | None = None
+    applied_at: datetime
+    # We will likely want to include applicant details (name, rating, skills) when returning lists

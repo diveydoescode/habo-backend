@@ -13,3 +13,4 @@ httpx==0.27.0
 geoalchemy2==0.15.1
 shapely==2.0.4
 python-multipart==0.0.9
+pyotp==2.9.0
