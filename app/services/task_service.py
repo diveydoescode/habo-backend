@@ -24,8 +24,8 @@ def _task_to_response(task: GigTask) -> TaskResponse:
         radius_metres=task.radius_metres,
         status=task.status,
         completion_code=task.completion_code, 
-        circle_id=task.circle_id, # ✅ Added
-        requires_application=task.requires_application, # ✅ Added
+        circle_id=task.circle_id, 
+        requires_application=task.requires_application, 
         created_at=task.created_at,
         creator_name=task.creator.name,
         creator_id=task.creator_id,
@@ -33,7 +33,6 @@ def _task_to_response(task: GigTask) -> TaskResponse:
     )
 
 def create_task(db: Session, payload: TaskCreate, creator: User) -> TaskResponse:
-    # ✅ Prevent posting to a circle the user isn't in
     if payload.circle_id:
         member = db.query(CircleMember).filter(
             CircleMember.circle_id == payload.circle_id,
@@ -51,8 +50,8 @@ def create_task(db: Session, payload: TaskCreate, creator: User) -> TaskResponse
         is_negotiable=payload.is_negotiable,
         location=point_wkt,
         radius_metres=payload.radius_metres,
-        circle_id=payload.circle_id, # ✅ Added
-        requires_application=payload.requires_application, # ✅ Added
+        circle_id=payload.circle_id, 
+        requires_application=payload.requires_application, 
         creator_id=creator.id,
     )
     db.add(task)
@@ -66,14 +65,15 @@ def get_tasks_in_radius(
     viewer_lat: float,
     viewer_lon: float,
     category: str | None,
-    current_user: User, # ✅ Added current_user to filter private circles
+    current_user: User, 
 ) -> list[TaskResponse]:
+    # ✅ FIXED: Replaced ::geography with standard CAST()
     sql = text("""
         SELECT id FROM tasks 
         WHERE status = 'Active' 
         AND ST_DWithin(
-            location::geography,
-            ST_SetSRID(ST_MakePoint(:lon, :lat), 4326):geography,
+            CAST(location AS geography),
+            CAST(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) AS geography),
             radius_metres
         )
         ORDER BY created_at DESC
@@ -85,14 +85,12 @@ def get_tasks_in_radius(
     if not task_ids:
         return []
 
-    # ✅ Fetch the user's circle IDs
     user_circle_ids = [
         c.circle_id for c in db.query(CircleMember.circle_id).filter(
             CircleMember.user_id == current_user.id
         ).all()
     ]
 
-    # ✅ Filter tasks: Must be public OR belong to a circle the user is in
     tasks_query = db.query(GigTask).filter(
         GigTask.id.in_(task_ids),
         or_(
@@ -126,11 +124,9 @@ def accept_task(db: Session, task_id: str, acceptor: User) -> GigTask:
     if str(task.creator_id) == str(acceptor.id):
         raise HTTPException(status_code=400, detail="Cannot accept your own task")
     
-    # ✅ Block instant accept if application is required
     if task.requires_application:
         raise HTTPException(status_code=400, detail="This task requires you to apply.")
         
-    # ✅ Block if task is in a private circle the user isn't in
     if task.circle_id:
         member = db.query(CircleMember).filter(
             CircleMember.circle_id == task.circle_id, 
@@ -234,15 +230,12 @@ def accept_application(db: Session, application_id: str, user: User) -> TaskAcce
     if task.status != "Active":
         raise HTTPException(status_code=400, detail="Task is already fulfilled or closed.")
 
-    # 1. Accept the chosen application
     application.status = "accepted"
     
-    # 2. Assign the task and generate the code
     task.status = "Accepted"
     task.accepted_by_id = application.applicant_id
     task.completion_code = ''.join(random.choices(string.digits, k=6))
 
-    # 3. Reject all other pending applications for this task
     other_apps = db.query(TaskApplication).filter(
         TaskApplication.task_id == task.id,
         TaskApplication.id != application_id
