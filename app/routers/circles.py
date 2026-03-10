@@ -151,3 +151,25 @@ def get_my_circles(
     ).all()
     
     return my_circles
+
+
+# ✅ NEW: Delete Circle Endpoint
+@router.delete("/{circle_id}")
+def delete_circle(
+    circle_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    circle = db.query(Circle).filter(Circle.id == circle_id).first()
+    
+    if not circle:
+        raise HTTPException(status_code=404, detail="Circle not found")
+        
+    # Security Check: Only the admin can delete it
+    if str(circle.admin_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Only Circle Admins can delete this circle.")
+        
+    db.delete(circle)
+    db.commit()
+    
+    return {"message": "Circle deleted successfully."}
