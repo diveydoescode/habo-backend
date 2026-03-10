@@ -12,7 +12,10 @@ class Circle(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    totp_secret = Column(String, nullable=False) # Stores the Base32 secret for TOTP math
+    
+    totp_secret = Column(String, nullable=False) # Stores the Base32 secret for Members
+    admin_totp_secret = Column(String, nullable=True) # ✅ NEW: Stores the Base32 secret for Admins
+    
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     admin = relationship("User", foreign_keys=[admin_id])
@@ -29,9 +32,3 @@ class CircleMember(Base):
 
     circle = relationship("Circle", back_populates="members")
     user = relationship("User")
-
-
-
-
-
-
